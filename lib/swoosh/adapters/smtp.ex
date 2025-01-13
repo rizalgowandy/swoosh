@@ -3,9 +3,10 @@ defmodule Swoosh.Adapters.SMTP do
   An adapter that sends email using the SMTP protocol.
 
   Underneath this adapter uses the
-  [gen_smtp](https://github.com/Vagabond/gen_smtp) library, add it to your mix.exs file.
+  [gen_smtp](https://github.com/gen-smtp/gen_smtp) library, add it to your mix.exs file.
 
   ## Example
+
       # mix.exs
       def deps do
         [
@@ -35,6 +36,12 @@ defmodule Swoosh.Adapters.SMTP do
       defmodule Sample.Mailer do
         use Swoosh.Mailer, otp_app: :sample
       end
+
+  ## Note
+
+  With `STARTTLS` you should omit the ssl configuration or set it to false.
+
+  For more details, please see [gen_smtp docs](https://hexdocs.pm/gen_smtp/readme.html)
   """
 
   use Swoosh.Adapter, required_config: [:relay], required_deps: [gen_smtp: :gen_smtp_client]
@@ -42,7 +49,6 @@ defmodule Swoosh.Adapters.SMTP do
   alias Swoosh.Email
   alias Swoosh.Adapters.SMTP.Helpers
 
-  @impl true
   def deliver(%Email{} = email, config) do
     sender = Helpers.sender(email)
     recipients = all_recipients(email)
@@ -69,9 +75,7 @@ defmodule Swoosh.Adapters.SMTP do
   @config_keys Map.keys(@config_transformations)
 
   def gen_smtp_config(config) do
-    Enum.reduce(config, [], fn {key, value}, config_acc ->
-      [enforce_type!(key, value) | config_acc]
-    end)
+    Enum.map(config, fn {key, value} -> enforce_type!(key, value) end)
   end
 
   defp enforce_type!(key, value) when key in @config_keys and is_binary(value) do
@@ -84,7 +88,7 @@ defmodule Swoosh.Adapters.SMTP do
         else
           raise ArgumentError, """
           #{key} is not configured properly,
-          got: #{value}, expected one of the followings:
+          got: #{value}, expected one of the following:
           #{valid_values |> Enum.map_join(", ", &inspect/1)}
           """
         end

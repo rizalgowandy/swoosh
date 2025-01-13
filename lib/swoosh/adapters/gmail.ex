@@ -4,18 +4,22 @@ defmodule Swoosh.Adapters.Gmail do
 
   For reference: [Gmail API docs](https://developers.google.com/gmail/api)
 
-  ## Dependency
+  **This adapter requires an API Client.** Swoosh comes with Hackney, Finch and Req out of the box.
+  See the [installation section](https://hexdocs.pm/swoosh/Swoosh.html#module-installation)
+  for details.
 
-  Gmail adapter requires `Mail` dependency to format message as RFC 2822 message.
-
-      {:mail, ">= 0.0.0"}
+  > ### Dependency {: .info}
+  >
+  > Gmail adapter requires `Mail` dependency to format message as RFC 2822 message.
+  >
+  >     {:mail, ">= 0.0.0"}
 
   Because `Mail` library removes Bcc headers, they are being added after email is
   rendered, in adapter code.
 
   ## Example
 
-      # config/congig.exs
+      # config/config.exs
       config :sample, Sample.Mailer,
         adapter: Swoosh.Adapters.Gmail,
         access_token: {:system, "GMAIL_API_ACCESS_TOKEN"}
@@ -44,7 +48,6 @@ defmodule Swoosh.Adapters.Gmail do
   @base_url "https://www.googleapis.com/upload/gmail/v1"
   @api_endpoint "/users/me/messages/send"
 
-  @impl true
   def deliver(%Email{} = email, config) do
     url = [base_url(config), @api_endpoint]
 

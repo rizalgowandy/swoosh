@@ -4,9 +4,13 @@ defmodule Swoosh.Adapters.Mailjet do
 
   For reference: [Mailjet API docs](https://dev.mailjet.com/guides/#send-api-v3-1)
 
-  ## Dependency
+  **This adapter requires an API Client.** Swoosh comes with Hackney, Finch and Req out of the box.
+  See the [installation section](https://hexdocs.pm/swoosh/Swoosh.html#module-installation)
+  for details.
 
-  Mailjet adapter requires `Plug` to work properly.
+  > ### Dependency {: .info}
+  >
+  > Mailjet adapter requires `Plug` to work properly.
 
   ## Example
 
@@ -20,6 +24,49 @@ defmodule Swoosh.Adapters.Mailjet do
       defmodule Sample.Mailer do
         use Swoosh.Mailer, otp_app: :sample
       end
+
+  ## Using with provider options
+
+      import Swoosh.Email
+
+      new()
+      |> from({"Billi Wang", "billi_wang@example.com"})
+      |> to({"Nai Nai", "nainai@example.com"})
+      |> reply_to("a24@example.com")
+      |> cc({"Haiyan Wang", "haiyan_wang@example.com"})
+      |> cc("lujian@example.com")
+      |> bcc({"Hao Hao", "haohao@example.com"})
+      |> bcc("aiko@example.com")
+      |> subject("Hello, Nai Nai!")
+      |> html_body("<h1>Hello</h1>")
+      |> text_body("Hello")
+      |> put_provider_option(:template_id, 123)
+      |> put_provider_option(:template_error_deliver, true)
+      |> put_provider_option(:template_error_reporting, "developer@example.com")
+      |> put_provider_option(:variables, %{firstname: "lulu", lastname: "wang"})
+      |> put_provider_option(:custom_id, "custom_id")
+      |> put_provider_option(:event_payload, "event_payload")
+
+  ## Provider options
+
+    * `:template_id` (integer) - `TemplateID`, unique template id of the
+      template to be used as email content
+
+    * `:template_error_deliver` (boolean) - `TemplateErrorDeliver`,
+      send even if error in template if `true`, otherwise stop email delivery
+      immediately upon error
+
+    * `:template_error_reporting` (string | tuple | map) - `TemplateErrorReporting`,
+      email address or a tuple of name and email address of a recipient to send a
+      carbon copy upon error
+
+    * `:variables` (map) - `Variables`, custom key-value variable for the email
+      content
+
+    * `:custom_id` (string) - `CustomID`, custom id for the email
+
+    * `:event_payload` (string | map) - `EventPayload`, custom payload that will
+      be attached on the mailjet webhook events
   """
 
   use Swoosh.Adapter,
@@ -31,12 +78,10 @@ defmodule Swoosh.Adapters.Mailjet do
   @base_url "https://api.mailjet.com/v3.1"
   @api_endpoint "send"
 
-  @impl true
   def deliver(%Email{} = email, config \\ []) do
-    send_request(prepare_body(email), email, config)
+    send_request(:single, prepare_body(email), email, config)
   end
 
-  @impl true
   def deliver_many(emails, config \\ [])
 
   def deliver_many([], _config) do
@@ -44,46 +89,44 @@ defmodule Swoosh.Adapters.Mailjet do
   end
 
   def deliver_many(emails, config) when is_list(emails) do
-    send_request(prepare_body(emails), emails, config)
+    send_request(:many, prepare_body(emails), emails, config)
   end
 
-  defp send_request(body, email_or_emails, config) do
+  defp send_request(type, body, email_or_emails, config) do
     email = email_or_emails |> List.wrap() |> List.first()
     headers = prepare_headers(config)
     url = [base_url(config), "/", @api_endpoint]
 
     case Swoosh.ApiClient.post(url, headers, body, email) do
       {:ok, 200, _headers, body} ->
-        {:ok, parse_results(body)}
+        {:ok, parse_results(type, body)}
 
       {:ok, error_code, _headers, body} when error_code >= 400 ->
-        {:error, {error_code, parse_results(body)}}
+        {:error, {error_code, parse_results(type, body)}}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp parse_results(%{"Messages" => results}) do
+  defp parse_results(type, %{"Messages" => results}) do
     results =
       Enum.map(results, fn
         %{"Status" => "success"} = result -> get_message_id(result)
         per_message_error -> per_message_error
       end)
 
-    case results do
-      [single] -> single
-      multiple -> multiple
+    case {type, results} do
+      {:single, [single]} -> single
+      {:many, list} -> list
     end
   end
 
-  defp parse_results(body) when is_binary(body) do
-    body
-    |> Swoosh.json_library().decode!
-    |> parse_results()
+  defp parse_results(type, body) when is_binary(body) do
+    parse_results(type, Swoosh.json_library().decode!(body))
   end
 
-  defp parse_results(global_error) do
+  defp parse_results(_type, global_error) do
     global_error
   end
 
@@ -138,9 +181,20 @@ defmodule Swoosh.Adapters.Mailjet do
     |> prepare_template(email)
     |> prepare_custom_headers(email)
     |> prepare_custom_id(email)
+    |> prepare_event_payload(email)
   end
 
   defp wrap_messages(body) when is_list(body), do: %{Messages: body}
+
+  defp prepare_event_payload(body, %{provider_options: %{event_payload: event_payload}})
+       when is_binary(event_payload),
+       do: Map.put(body, "EventPayload", event_payload)
+
+  defp prepare_event_payload(body, %{provider_options: %{event_payload: event_payload}})
+       when is_map(event_payload),
+       do: Map.put(body, "EventPayload", Swoosh.json_library().encode!(event_payload))
+
+  defp prepare_event_payload(body, _options), do: body
 
   defp prepare_custom_id(body, %{provider_options: %{custom_id: custom_id}}),
     do: Map.put(body, "CustomID", custom_id)
@@ -171,7 +225,8 @@ defmodule Swoosh.Adapters.Mailjet do
     %{
       "ContentType" => attachment.content_type,
       "Filename" => attachment.filename,
-      "Base64Content" => Attachment.get_content(attachment, :base64)
+      "Base64Content" => Attachment.get_content(attachment, :base64),
+      "ContentId" => attachment.cid || attachment.filename
     }
   end
 

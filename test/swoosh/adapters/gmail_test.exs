@@ -35,12 +35,12 @@ defmodule Swoosh.Adapters.GmailTest do
         ~s"""
         To: "" <tony.stark@example.com>\r
         Subject: Hello, Avengers!\r
-        Mime-Version: 1.0\r
+        MIME-Version: 1.0\r
         From: "" <steve.rogers@example.com>\r
         Content-Type: multipart/alternative; boundary="#{boundary}"\r
         \r
         --#{boundary}\r
-        Content-Type: text/html\r
+        Content-Type: text/html; charset=UTF-8\r
         Content-Transfer-Encoding: quoted-printable\r
         \r
         <h1>Hello</h1>\r
@@ -89,20 +89,20 @@ defmodule Swoosh.Adapters.GmailTest do
         To: "Steve Rogers" <steve.rogers@example.com>, "" <wasp.avengers@example.com>\r
         Subject: Hello, Avengers!\r
         Reply-To: "" <iron.stark@example.com>\r
-        Mime-Version: 1.0\r
+        MIME-Version: 1.0\r
         From: "T Stark" <tony.stark@example.com>\r
         Content-Type: multipart/alternative; boundary="#{boundary}"\r
         Cc: "" <thor.odinson@example.com>\r
         X-Avengers: Assemble\r
         \r
         --#{boundary}\r
-        Content-Type: text/plain\r
+        Content-Type: text/plain; charset=UTF-8\r
         Content-Transfer-Encoding: quoted-printable\r
         \r
         Hello\r
         \r
         --#{boundary}\r
-        Content-Type: text/html\r
+        Content-Type: text/html; charset=UTF-8\r
         Content-Transfer-Encoding: quoted-printable\r
         \r
         <h1>Hello</h1>\r

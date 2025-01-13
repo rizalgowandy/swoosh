@@ -2,13 +2,13 @@ defmodule Swoosh.Mixfile do
   use Mix.Project
 
   @source_url "https://github.com/swoosh/swoosh"
-  @version "1.5.2"
+  @version "1.17.6"
 
   def project do
     [
       app: :swoosh,
       version: @version,
-      elixir: "~> 1.10",
+      elixir: "~> 1.13",
       elixirc_paths: elixirc_paths(Mix.env()),
       consolidate_protocols: Mix.env() != :test,
       build_embedded: Mix.env() == :prod,
@@ -24,7 +24,7 @@ defmodule Swoosh.Mixfile do
       name: "Swoosh",
       source_url: @source_url,
       homepage_url: @source_url,
-      docs: docs(),
+      docs: &docs/0,
       preferred_cli_env: [
         docs: :docs,
         "hex.publish": :docs
@@ -36,13 +36,19 @@ defmodule Swoosh.Mixfile do
           :hackney,
           :gen_smtp_client,
           :mimemail,
+          ExAws.Config,
           Finch,
+          Req,
           Plug.Adapters.Cowboy,
           Plug.Conn.Query,
           Plug.Cowboy,
+          Bandit,
           Mail,
           Mail.Message,
           Mail.Renderers.RFC2822,
+          Mua,
+          Multipart,
+          Multipart.Part,
           {IEx, :started?, 0}
         ]
       ]
@@ -67,14 +73,25 @@ defmodule Swoosh.Mixfile do
       {:telemetry, "~> 0.4.2 or ~> 1.0"},
       {:hackney, "~> 1.9", optional: true},
       {:finch, "~> 0.6", optional: true},
+      {:req, "~> 0.5 or ~> 1.0", optional: true},
       {:mail, "~> 0.2", optional: true},
       {:gen_smtp, "~> 0.13 or ~> 1.0", optional: true},
+      {:mua, "~> 0.2.3", optional: true},
       {:cowboy, "~> 1.1 or ~> 2.4", optional: true},
+      {:plug, "~> 1.9", optional: true},
       {:plug_cowboy, ">= 1.0.0", optional: true},
+      {:bandit, ">= 1.0.0", optional: true},
+      {:multipart, "~> 0.4", optional: true},
+      {:ex_aws, "~> 2.1", optional: true},
       {:bypass, "~> 2.1", only: :test},
       {:ex_doc, "~> 0.26", only: :docs, runtime: false}
     ]
   end
+
+  @deprecated_adapters [
+    Swoosh.Adapters.OhMySmtp,
+    Swoosh.Adapters.Sendinblue
+  ]
 
   defp docs do
     [
@@ -96,10 +113,15 @@ defmodule Swoosh.Mixfile do
         "Api Client": [
           Swoosh.ApiClient,
           Swoosh.ApiClient.Finch,
-          Swoosh.ApiClient.Hackney
+          Swoosh.ApiClient.Hackney,
+          Swoosh.ApiClient.Req
         ],
         Plug: Plug.Swoosh.MailboxPreview,
-        Test: Swoosh.TestAssertions
+        Test: [
+          Swoosh.TestAssertions,
+          Swoosh.X.TestAssertions
+        ],
+        Deprecated: @deprecated_adapters
       ]
     ]
   end
@@ -111,6 +133,7 @@ defmodule Swoosh.Mixfile do
       [_, module] = Regex.run(~r/\Adefmodule (.+) do/, content)
       module |> String.split(".") |> Module.concat()
     end)
+    |> Kernel.--(@deprecated_adapters)
   end
 
   defp aliases do
@@ -141,8 +164,8 @@ defmodule Swoosh.Mixfile do
   defp description do
     """
     Compose, deliver and test your emails easily in Elixir. Supports SMTP,
-    Sendgrid, Mandrill, Postmark and Mailgun out of the box.
-    Preview your mails in the browser. Great integration with Phoenix.
+    Sendgrid, Mandrill, Postmark, Mailgun and many more out of the box.
+    Preview your emails in the browser. Test your email sending code.
     """
   end
 

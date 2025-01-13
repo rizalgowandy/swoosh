@@ -29,12 +29,16 @@ defmodule Swoosh.Adapters.Postmark do
       |> put_provider_option(:template_model, %{name: "Steve", email: "steve@avengers.com"})
 
   You can also use `template_alias` instead of `template_id`, if you use Postmark's
-  [TemplateAlias](https://postmarkapp.com/developer/api/templates-api#email-with-template)
-  feature.
+  [TemplateAlias](https://postmarkapp.com/developer/api/templates-api#email-with-template) feature.
 
-  When sending batch emails using `deliver_many` do not mix emails using templates with
-  non-template emails. The use of templates impacts the API endpoint used and so the batch email
-  collection should be of the same format.
+  Note that you must include the `:template_model` provider option even if your template
+  has no variables to interpolate. In this case you can pass an empty map:
+
+      put_provider_option(email, :template_model, %{})
+
+  When sending batch emails using `:deliver_many` do not mix emails using
+  templates with non-template emails. The use of templates impacts the API
+  endpoint used and so the batch email collection should be of the same format.
 
   ## Example of sending emails with a tag
 
@@ -50,11 +54,30 @@ defmodule Swoosh.Adapters.Postmark do
 
   ## Provider Options
 
-  - `:metadata` (map)
-  - `:tag` (string)
-  - `:template_id` (string)
-  - `:template_alias` (string)
-  - `:template_model` (map)
+    * `:message_stream` (string) – `MessageStream`, configure the message stream
+      for the email
+
+    * `:metadata` (map) - `Metadata`, add metadata to an email
+
+    * `:tag` (string) - `Tag`, to categorize outgoing email
+
+    * `:template_id` (string) - `TemplateId`, the template used when sending
+      email and only required if `:template_alias` is not specified
+
+    * `:template_alias` (string), `TemplateAlias`, the alias of a template used
+      when sending email and only required if `:template_id` is not specified
+
+    * `:template_model` (map), `TemplateModel`, a map of key/value field to be
+      used in the `HtmlBody`, `TextBody`, and `Subject` field in the template,
+      required alongside `:template_id`/`:template_alias`
+
+    * `:track_opens` (boolean) - `TrackOpens`, specify if open tracking needs to be enabled for this email.
+
+    * `:track_links` (string) - `TrackOpens`, specify if link tracking needs to be enabled for this email.
+       Valid values are: `None`, `HtmlAndText`, `HtmlOnly`, `TextOnly`
+
+    * `:inline_css` (boolean) - `InlineCss`, specify if Postmark should apply the style blocks as inline
+      attributes to the rendered HTML content. Default is true.
   """
 
   use Swoosh.Adapter, required_config: [:api_key]
@@ -64,7 +87,6 @@ defmodule Swoosh.Adapters.Postmark do
 
   @base_url "https://api.postmarkapp.com"
 
-  @impl true
   def deliver(%Email{} = email, config \\ []) do
     headers = prepare_headers(config)
     params = email |> prepare_body() |> Swoosh.json_library().encode!
@@ -85,14 +107,12 @@ defmodule Swoosh.Adapters.Postmark do
     end
   end
 
-  @impl true
   def deliver_many(emails, config \\ [])
 
   def deliver_many([], _config) do
     {:ok, []}
   end
 
-  @impl true
   def deliver_many(emails, config) when is_list(emails) do
     headers = prepare_headers(config)
     body = emails |> prepare_body() |> Swoosh.json_library().encode!
@@ -105,7 +125,9 @@ defmodule Swoosh.Adapters.Postmark do
             %{
               id: email_result["MessageID"],
               error_code: email_result["ErrorCode"],
-              message: email_result["Message"]
+              message: email_result["Message"],
+              to: email_result["To"],
+              submitted_at: email_result["SubmittedAt"]
             }
           end)
 
@@ -174,6 +196,9 @@ defmodule Swoosh.Adapters.Postmark do
     |> prepare_tag(email)
     |> prepare_metadata(email)
     |> prepare_message_stream(email)
+    |> prepare_track_opens(email)
+    |> prepare_track_links(email)
+    |> prepare_inline_css(email)
   end
 
   defp prepare_from(body, %{from: from}), do: Map.put(body, "From", render_recipient(from))
@@ -204,7 +229,7 @@ defmodule Swoosh.Adapters.Postmark do
         attachment_data
 
       :inline ->
-        Map.put(attachment_data, "ContentID", "cid:#{attachment.filename}")
+        Map.put(attachment_data, "ContentID", "cid:#{attachment.cid}")
     end
   end
 
@@ -268,4 +293,19 @@ defmodule Swoosh.Adapters.Postmark do
     do: Map.put(body, "MessageStream", value)
 
   defp prepare_message_stream(body, _), do: body
+
+  defp prepare_track_opens(body, %{provider_options: %{track_opens: value}}),
+    do: Map.put(body, "TrackOpens", value)
+
+  defp prepare_track_opens(body, _), do: body
+
+  defp prepare_track_links(body, %{provider_options: %{track_links: value}}),
+    do: Map.put(body, "TrackLinks", value)
+
+  defp prepare_track_links(body, _), do: body
+
+  defp prepare_inline_css(body, %{provider_options: %{inline_css: value}}),
+    do: Map.put(body, "InlineCss", value)
+
+  defp prepare_inline_css(body, _), do: body
 end

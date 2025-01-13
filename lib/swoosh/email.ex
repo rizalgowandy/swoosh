@@ -24,7 +24,7 @@ defmodule Swoosh.Email do
   This key is reserved for use with adapters, libraries and frameworks.
 
   * `private` - a map of values that are for use by libraries/frameworks, example: `%{phoenix_template: "welcome.html.eex"}`
-    - `hackney_options` will be passed to underlining hackney post call
+    - `client_options` will be passed to underlying http client post call
 
   ## Provider options
 
@@ -85,7 +85,7 @@ defmodule Swoosh.Email do
           bcc: [mailbox] | [],
           text_body: text_body | nil,
           html_body: html_body | nil,
-          reply_to: mailbox | nil,
+          reply_to: [mailbox] | mailbox | nil,
           headers: map,
           private: map,
           assigns: map,
@@ -211,7 +211,8 @@ defmodule Swoosh.Email do
   end
 
   @doc """
-  Sets a recipient in the `reply_to` field.
+  Sets a recipient in the `reply_to` field. May also set a list of recipients as `reply_to`, but the
+  support for it on adapters is on case-by-case basis.
 
   ## Examples
 
@@ -224,8 +225,18 @@ defmodule Swoosh.Email do
       %Swoosh.Email{assigns: %{}, attachments: [], bcc: [], cc: [], from: nil,
        headers: %{}, html_body: nil, private: %{}, provider_options: %{},
        reply_to: {"", "steve.rogers@example.com"}, subject: "", text_body: nil, to: []}
+
+      iex> new() |> reply_to([{"Steve Rogers", "steve.rogers@example.com"}, "bucky.barnes@example.com"])
+      %Swoosh.Email{assigns: %{}, attachments: [], bcc: [], cc: [], from: nil,
+       headers: %{}, html_body: nil, private: %{}, provider_options: %{},
+       reply_to: [{"Steve Rogers", "steve.rogers@example.com"}, {"", "bucky.barnes@example.com"}],
+       subject: "", text_body: nil, to: []}
   """
-  @spec reply_to(t, Recipient.t()) :: t
+  @spec reply_to(t, Recipient.t() | [Recipient.t()]) :: t
+  def reply_to(%__MODULE__{} = email, reply_to) when is_list(reply_to) do
+    %{email | reply_to: Enum.map(reply_to, &Recipient.format(&1))}
+  end
+
   def reply_to(%__MODULE__{} = email, reply_to) do
     %{email | reply_to: Recipient.format(reply_to)}
   end
@@ -472,28 +483,28 @@ defmodule Swoosh.Email do
        reply_to: nil, subject: "", text_body: nil, to: [],
        attachments: [%Swoosh.Attachment{path: "/data/att.zip",
         content_type: "application/zip", filename: "att.zip",
-        type: :attachment, data: nil, headers: []}]}
+        type: :attachment, data: nil, headers: [], cid: nil}]}
       iex> new() |> attachment(Swoosh.Attachment.new("/data/att.zip"))
       %Swoosh.Email{assigns: %{}, bcc: [], cc: [], from: nil,
        headers: %{}, html_body: nil, private: %{}, provider_options: %{},
        reply_to: nil, subject: "", text_body: nil, to: [],
        attachments: [%Swoosh.Attachment{path: "/data/att.zip",
         content_type: "application/zip", filename: "att.zip",
-        type: :attachment, data: nil, headers: []}]}
+        type: :attachment, data: nil, headers: [], cid: nil}]}
       iex> new() |> attachment(%Plug.Upload{path: "/data/abcdefg", content_type: "test/type", filename: "att.zip"})
       %Swoosh.Email{assigns: %{}, bcc: [], cc: [], from: nil,
        headers: %{}, html_body: nil, private: %{}, provider_options: %{},
        reply_to: nil, subject: "", text_body: nil, to: [],
        attachments: [%Swoosh.Attachment{path: "/data/abcdefg",
         content_type: "test/type", filename: "att.zip",
-        type: :attachment, data: nil, headers: []}]}
+        type: :attachment, data: nil, headers: [], cid: nil}]}
       iex> new() |> attachment(Swoosh.Attachment.new("/data/att.png", type: :inline))
       %Swoosh.Email{assigns: %{}, bcc: [], cc: [], from: nil,
        headers: %{}, html_body: nil, private: %{}, provider_options: %{},
        reply_to: nil, subject: "", text_body: nil, to: [],
        attachments: [%Swoosh.Attachment{path: "/data/att.png",
         content_type: "image/png", filename: "att.png",
-        type: :inline, data: nil, headers: []}]}
+        type: :inline, data: nil, headers: [], cid: "att.png"}]}
   """
   @spec attachment(t, binary | Swoosh.Attachment.t()) :: t
   def attachment(%__MODULE__{attachments: attachments} = email, path) when is_binary(path) do

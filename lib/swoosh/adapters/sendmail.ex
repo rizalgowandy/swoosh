@@ -22,9 +22,8 @@ defmodule Swoosh.Adapters.Sendmail do
   alias Swoosh.Email
   alias Swoosh.Adapters.SMTP.Helpers
 
-  @impl true
   def deliver(%Email{} = email, config) do
-    body = Helpers.body(email, config)
+    body = Helpers.body(email, [{:keep_bcc, true} | config])
     port = Port.open({:spawn, cmd(email, config)}, [:binary])
     Port.command(port, body)
     Port.close(port)
@@ -50,15 +49,7 @@ defmodule Swoosh.Adapters.Sendmail do
 
   @doc false
   def cmd_args(config) do
-    case config[:qmail] do
-      true -> ""
-      _ -> " -oi -t"
-    end
-    <>
-    case config[:cmd_args] do
-      nil -> ""
-      args -> " #{args}"
-    end
+    if(config[:qmail], do: "", else: " -oi -t") <> String.trim_trailing(" #{config[:cmd_args]}")
   end
 
   @doc false

@@ -19,7 +19,6 @@ defmodule Swoosh.Adapters.Test do
 
   use Swoosh.Adapter
 
-  @impl true
   def deliver(email, _config) do
     for pid <- pids() do
       send(pid, {:email, email})
@@ -28,13 +27,14 @@ defmodule Swoosh.Adapters.Test do
     {:ok, %{}}
   end
 
-  @impl true
   def deliver_many(emails, _config) do
     for pid <- pids() do
       send(pid, {:emails, emails})
     end
 
-    {:ok, %{}}
+    responses = for _email <- emails, do: %{}
+
+    {:ok, responses}
   end
 
   # Essentially finds all of the processes that tried to send an email (in the test)

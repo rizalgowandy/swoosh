@@ -1,14 +1,16 @@
 defmodule Swoosh.Adapters.AmazonSES do
   @moduledoc ~S"""
-  An adapter that sends email using the Amazon Simple Email Service Query API.
+  An adapter that sends email using the Amazon Simple Email Service (SES) Query API.
+  This adapter does not depend on `ExAws`; if you are already using it, you may
+  prefer `Swoosh.Adapters.ExAwsAmazonSES`.
 
   This email adapter makes use of the Amazon SES SendRawEmail action and generates
   a SMTP style message containing the information to be emailed. This allows for
-  greater more customizable email message and ensures the capability to add
-  attachments. As a result, however, the `gen_smtp` dependency is required in order
+  greater and more customizable email message and ensures the capability to add
+  attachments. As a result, however, the `:gen_smtp` dependency is required in order
   to correctly generate the SMTP message that will be sent.
 
-  Ensure sure you have the dependency added in your mix.exs file.
+  Ensure you have the dependency added in your mix.exs file:
 
       def deps do
         [
@@ -17,13 +19,41 @@ defmodule Swoosh.Adapters.AmazonSES do
         ]
       end
 
-  See Also:
+  **Note**: If Swoosh was compiled prior to `:gen_smtp` being installed, it may be necessary to
+  force a recompilation of the library. This can be accomplished using `mix deps.compile swoosh --force`.
+
+  **This adapter requires an API Client.** Swoosh comes with Hackney, Finch and Req out of the box.
+  See the [installation section](https://hexdocs.pm/swoosh/Swoosh.html#module-installation)
+  for details.
+
+  See also:
 
   [Amazon SES Query Api Docs](http://docs.aws.amazon.com/ses/latest/APIReference/Welcome.html)
 
   [Amazon SES SendRawEmail Documentation](http://docs.aws.amazon.com/ses/latest/APIReference/API_SendRawEmail.html)
 
-  ## Example
+  ## Configuration options
+
+  ### Required
+
+  Note that these are handled automatically if using `Swoosh.Adapters.ExAwsAmazonSES`.
+
+  * `:region` - the AWS region
+  * `:access_key` - the IAM access key
+  * `:secret` - the IAM secret
+
+  ### Optional
+
+  The following [request parameters](https://docs.aws.amazon.com/ses/latest/APIReference/API_SendRawEmail.html#API_SendRawEmail_RequestParameters) can be set in the configuration:
+
+  * `:ses_source` - mapped to `Source` parameter in the API request
+  * `:ses_source_arn` - mapped to `SourceArn` parameter in the API request
+  * `:ses_from_arn` - mapped to `FromArn` parameter in the API request
+  * `:ses_return_path_arn` - mapped to `ReturnPathArn` parameter in the API request
+
+  See details on how to use the parameters from [the SES API documentation](https://docs.aws.amazon.com/ses/latest/APIReference/API_SendRawEmail.html#API_SendRawEmail_RequestParameters).
+
+  ## Examples
 
       # config/config.exs
       config :sample, Sample.Mailer,
@@ -49,13 +79,24 @@ defmodule Swoosh.Adapters.AmazonSES do
       |> put_provider_option(:tags, [%{name: "name1", value: "test1"}])
       |> put_provider_option(:configuration_set_name, "configuration_set_name1")
 
+  ## Provider Options
+
+    * `:tags` (list[map]) - a list of key/value pairs of a tag
+    * `:configuration_set_name` (string) - the name of the configuration set
+    * `:security_token` (string) - temporary security token obtained through
+      AWS Security Token Service (AWS STS)
+
   ## IAM role
 
   In case you use IAM role for authenticating AWS requests, you can fetch
-  temporary `access_key` and `secret_key` from that role, but you also need to
+  temporary `:access_key` and `:secret_key` from that role, but you also need to
   include additional `X-Amz-Security-Token` header to that request.
 
-  You can do that by adding `security_token` to `provider_options`.
+  You can do that by adding `:security_token` to `:provider_options`.
+
+  If you don't have a static `:access_key` and `:secret_key` for your
+  application, you can use the `Swoosh.Adapters.ExAwsAmazonSES` adapter to fetch credentials
+  on-demand as specified in your application's `:ex_aws` configuration.
   """
 
   use Swoosh.Adapter,
@@ -74,7 +115,6 @@ defmodule Swoosh.Adapters.AmazonSES do
   @base_headers %{"Content-Type" => "application/x-www-form-urlencoded"}
   @version "2010-12-01"
 
-  @impl true
   def deliver(%Email{} = email, config \\ []) do
     query = email |> prepare_body(config) |> encode_body
     url = base_url(config)
@@ -121,6 +161,10 @@ defmodule Swoosh.Adapters.AmazonSES do
     |> Map.put("Action", @action)
     |> Map.put("Version", Keyword.get(config, :version, @version))
     |> Map.put("RawMessage.Data", generate_raw_message_data(email, config))
+    |> prepare_source(config)
+    |> prepare_source_arn(config)
+    |> prepare_from_arn(config)
+    |> prepare_return_path_arn(config)
     |> prepare_configuration_set_name(email)
     |> prepare_tags(email)
   end
@@ -134,6 +178,34 @@ defmodule Swoosh.Adapters.AmazonSES do
   end
 
   defp prepare_configuration_set_name(body, _email), do: body
+
+  defp prepare_source(body, config) do
+    case Keyword.fetch(config, :ses_source) do
+      {:ok, source} -> Map.put(body, "Source", source)
+      :error -> body
+    end
+  end
+
+  defp prepare_source_arn(body, config) do
+    case Keyword.fetch(config, :ses_source_arn) do
+      {:ok, source} -> Map.put(body, "SourceArn", source)
+      :error -> body
+    end
+  end
+
+  defp prepare_from_arn(body, config) do
+    case Keyword.fetch(config, :ses_from_arn) do
+      {:ok, from} -> Map.put(body, "FromArn", from)
+      :error -> body
+    end
+  end
+
+  defp prepare_return_path_arn(body, config) do
+    case Keyword.fetch(config, :ses_return_path_arn) do
+      {:ok, return_path} -> Map.put(body, "ReturnPathArn", return_path)
+      :error -> body
+    end
+  end
 
   defp prepare_tags(body, %{provider_options: %{tags: tags}}) do
     Map.merge(
@@ -151,7 +223,7 @@ defmodule Swoosh.Adapters.AmazonSES do
 
   defp generate_raw_message_data(email, config) do
     email
-    |> SMTPHelper.body(config)
+    |> SMTPHelper.body([{:keep_bcc, true} | config])
     |> Base.encode64()
     |> URI.encode()
   end

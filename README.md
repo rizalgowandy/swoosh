@@ -7,16 +7,14 @@
 
 Compose, deliver and test your emails easily in Elixir.
 
-We have applied the lessons learned from projects like Plug, Ecto and Phoenix
-in designing clean and composable APIs, with clear separation of concerns
-between modules. Swoosh comes with 12 adapters, including SendGrid, Mandrill,
-Mailgun, Postmark and SMTP. See the full list of [adapters below](#adapters).
+Swoosh comes with many adapters, including SendGrid, Mandrill, Mailgun, Postmark and SMTP.
+See the full list of [adapters below](#adapters).
 
 The complete documentation for Swoosh is [available online at HexDocs](https://hexdocs.pm/swoosh).
 
 ## Requirements
 
-Elixir 1.10+ and Erlang OTP 22+
+Elixir 1.13+ and Erlang OTP 24+
 
 ## Getting started
 
@@ -79,7 +77,7 @@ configuration options.
 
   ```elixir
   def deps do
-    [{:swoosh, "~> 1.5"}]
+    [{:swoosh, "~> 1.17"}]
   end
   ```
 
@@ -88,11 +86,12 @@ configuration options.
   by default. If you want to use it, you just need to include
   [`Hackney`](https://hex.pm/packages/hackney) as a dependency of your app.
 
-  Swoosh also accepts [`Finch`](https://hex.pm/packages/finch) out-of-the-box.
-  See `Swoosh.ApiClient.Finch` for details.
+  Swoosh also accepts [`Finch`](https://hex.pm/packages/finch) and [`Req`](https://hex.pm/packages/req) out-of-the-box.
+  See `Swoosh.ApiClient.Finch` and `Swoosh.ApiClient.Req` for details.
 
-  If you need to integrate with another HTTP client, it's easy to define a new API client.
-  Follow the `Swoosh.ApiClient` behaviour and configure Swoosh to use it:
+  If you need to integrate with another HTTP client, it's easy to define a new
+  API client. Follow the `Swoosh.ApiClient` behaviour and configure Swoosh to
+  use it:
 
   ```elixir
   config :swoosh, :api_client, MyApp.ApiClient
@@ -105,8 +104,9 @@ configuration options.
   config :swoosh, :api_client, false
   ```
 
-  This is the case when you are using `Swoosh.Adapters.Local`, `Swoosh.Adapters.Test` and
-  adapters that are SMTP based, that don't require an API client.
+  This is the case when you are using `Swoosh.Adapters.Local`,
+  `Swoosh.Adapters.Test` and adapters that are SMTP based, that don't require
+  an API client.
 
 - (Optional) If you are using `Swoosh.Adapters.SMTP`,
   `Swoosh.Adapters.Sendmail` or `Swoosh.Adapters.AmazonSES`, you also need to
@@ -115,7 +115,7 @@ configuration options.
   ```elixir
   def deps do
     [
-      {:swoosh, "~> 1.5"},
+      {:swoosh, "~> 1.6"},
       {:gen_smtp, "~> 1.0"}
     ]
   end
@@ -124,24 +124,34 @@ configuration options.
 ## Adapters
 
 Swoosh supports the most popular transactional email providers out of the box
-and also has a SMTP adapter. Below is the list of the adapters currently
+and also has an SMTP adapter. Below is the list of the adapters currently
 included:
 
-| Provider   | Swoosh adapter                                                                                  |
-| ---------- | ----------------------------------------------------------------------------------------------- |
-| SMTP       | [Swoosh.Adapters.SMTP](https://hexdocs.pm/swoosh/Swoosh.Adapters.SMTP.html#content)             |
-| SendGrid   | [Swoosh.Adapters.Sendgrid](https://hexdocs.pm/swoosh/Swoosh.Adapters.Sendgrid.html#content)     |
-| Sendinblue | [Swoosh.Adapters.Sendinblue](https://hexdocs.pm/swoosh/Swoosh.Adapters.Sendinblue.html#content) |
-| Sendmail   | [Swoosh.Adapters.Sendmail](https://hexdocs.pm/swoosh/Swoosh.Adapters.Sendmail.html#content)     |
-| Mandrill   | [Swoosh.Adapters.Mandrill](https://hexdocs.pm/swoosh/Swoosh.Adapters.Mandrill.html#content)     |
-| Mailgun    | [Swoosh.Adapters.Mailgun](https://hexdocs.pm/swoosh/Swoosh.Adapters.Mailgun.html#content)       |
-| Mailjet    | [Swoosh.Adapters.Mailjet](https://hexdocs.pm/swoosh/Swoosh.Adapters.Mailjet.html#content)       |
-| Postmark   | [Swoosh.Adapters.Postmark](https://hexdocs.pm/swoosh/Swoosh.Adapters.Postmark.html#content)     |
-| SparkPost  | [Swoosh.Adapters.SparkPost](https://hexdocs.pm/swoosh/Swoosh.Adapters.SparkPost.html#content)   |
-| Amazon SES | [Swoosh.Adapters.AmazonSES](https://hexdocs.pm/swoosh/Swoosh.Adapters.AmazonSES.html#content)   |
-| Dyn        | [Swoosh.Adapters.Dyn](https://hexdocs.pm/swoosh/Swoosh.Adapters.Dyn.html#content)               |
-| SocketLabs | [Swoosh.Adapters.SocketLabs](https://hexdocs.pm/swoosh/Swoosh.Adapters.SocketLabs.html#content) |
-| Gmail      | [Swoosh.Adapters.Gmail](https://hexdocs.pm/swoosh/Swoosh.Adapters.Gmail.html#content)           |
+| Provider     | Swoosh adapter                                                                                      | Remarks          |
+| ------------ | --------------------------------------------------------------------------------------------------- | ---------------- |
+| SMTP         | [Swoosh.Adapters.SMTP](https://hexdocs.pm/swoosh/Swoosh.Adapters.SMTP.html#content)                 |                  |
+| Mua          | [Swoosh.Adapters.Mua](https://hexdocs.pm/swoosh/Swoosh.Adapters.Mua.html#content)                   | SMTP alternative |
+| SendGrid     | [Swoosh.Adapters.Sendgrid](https://hexdocs.pm/swoosh/Swoosh.Adapters.Sendgrid.html#content)         |                  |
+| Brevo        | [Swoosh.Adapters.Brevo](https://hexdocs.pm/swoosh/Swoosh.Adapters.Brevo.html#content)               | Sendinblue       |
+| Sendmail     | [Swoosh.Adapters.Sendmail](https://hexdocs.pm/swoosh/Swoosh.Adapters.Sendmail.html#content)         |                  |
+| Mandrill     | [Swoosh.Adapters.Mandrill](https://hexdocs.pm/swoosh/Swoosh.Adapters.Mandrill.html#content)         |                  |
+| Mailgun      | [Swoosh.Adapters.Mailgun](https://hexdocs.pm/swoosh/Swoosh.Adapters.Mailgun.html#content)           |                  |
+| Mailjet      | [Swoosh.Adapters.Mailjet](https://hexdocs.pm/swoosh/Swoosh.Adapters.Mailjet.html#content)           |                  |
+| MsGraph      | [Swoosh.Adapters.MsGraph](https://hexdocs.pm/swoosh/Swoosh.Adapters.MsGraph.html#content)           |                  |
+| Postmark     | [Swoosh.Adapters.Postmark](https://hexdocs.pm/swoosh/Swoosh.Adapters.Postmark.html#content)         |                  |
+| SparkPost    | [Swoosh.Adapters.SparkPost](https://hexdocs.pm/swoosh/Swoosh.Adapters.SparkPost.html#content)       |                  |
+| Amazon SES   | [Swoosh.Adapters.AmazonSES](https://hexdocs.pm/swoosh/Swoosh.Adapters.AmazonSES.html#content)       |                  |
+| Amazon SES   | [Swoosh.Adapters.ExAwsAmazonSES](https://hexdocs.pm/swoosh/Swoosh.Adapters.ExAwsAmazonSES.html)     |                  |
+| Dyn          | [Swoosh.Adapters.Dyn](https://hexdocs.pm/swoosh/Swoosh.Adapters.Dyn.html#content)                   |                  |
+| Scaleway     | [Swoosh.Adapters.Scaleway](https://hexdocs.pm/swoosh/Swoosh.Adapters.Scaleway.html#content)         |                  |
+| SocketLabs   | [Swoosh.Adapters.SocketLabs](https://hexdocs.pm/swoosh/Swoosh.Adapters.SocketLabs.html#content)     |                  |
+| Gmail        | [Swoosh.Adapters.Gmail](https://hexdocs.pm/swoosh/Swoosh.Adapters.Gmail.html#content)               |                  |
+| MailPace     | [Swoosh.Adapters.MailPace](https://hexdocs.pm/swoosh/Swoosh.Adapters.MailPace.html#content)         | OhMySMTP         |
+| SMTP2GO      | [Swoosh.Adapters.SMTP2GO](https://hexdocs.pm/swoosh/Swoosh.Adapters.SMTP2GO.html#content)           |                  |
+| ProtonBridge | [Swoosh.Adapters.ProtonBridge](https://hexdocs.pm/swoosh/Swoosh.Adapters.ProtonBridge.html#content) |                  |
+| Mailtrap     | [Swoosh.Adapters.Mailtrap](https://hexdocs.pm/swoosh/Swoosh.Adapters.Mailtrap.html#content)         |                  |
+| ZeptoMail    | [Swoosh.Adapters.ZeptoMail](https://hexdocs.pm/swoosh/Swoosh.Adapters.ZeptoMail.html#content)       |                  |
+| Postal       | [Swoosh.Adapters.Postal](https://hexdocs.pm/swoosh/Swoosh.Adapters.Postal.html#content)             |                  |
 
 Configure which adapter you want to use by updating your `config/config.exs`
 file:
@@ -221,55 +231,8 @@ Elixir's ecosystem has many
 
 - [Oban](https://hexdocs.pm/oban/Oban.html) is the current community favourite.
   It uses PostgreSQL for storage and coordination.
-- [Exq](https://hexdocs.pm/exq/readme.html) uses Redis and is compatible with Resque / Sidekiq.
-
-## Phoenix integration
-
-If you are looking to use Swoosh in your Phoenix project, make sure to check
-out the [phoenix_swoosh](https://github.com/swoosh/phoenix_swoosh) project. It
-contains a set of functions that make it easy to render the text and HTML
-bodies using Phoenix views, templates and layouts.
-
-Taking the example from above the "Getting Started" section, your code would
-look something like this:
-
-> web/templates/layout/email.html.eex
-```
-<html>
-  <head>
-    <title><%= @email.subject %></title>
-  </head>
-  <body>
-    <%= @inner_content %>
-  </body>
-</html>
-```
-
-> web/templates/email/welcome.html.eex
-```html
-<div>
-  <h1>Welcome to Sample, <%= @username %>!</h1>
-</div>
-```
-
-> web/emails/user_email.ex
-```elixir
-defmodule Sample.UserEmail do
-  use Phoenix.Swoosh, view: Sample.EmailView, layout: {Sample.LayoutView, :email}
-
-  def welcome(user) do
-    new()
-    |> to({user.name, user.email})
-    |> from({"Dr B Banner", "hulk.smash@example.com"})
-    |> subject("Hello, Avengers!")
-    |> render_body("welcome.html", %{username: user.username})
-  end
-end
-```
-
-Feels familiar doesn't it? Head to the
-[phoenix_swoosh](https://github.com/swoosh/phoenix_swoosh) repo for more
-details.
+- [Exq](https://hexdocs.pm/exq/readme.html) uses Redis and is compatible with
+  Resque / Sidekiq.
 
 ## Attachments
 
@@ -303,12 +266,24 @@ defmodule Sample.UserTest do
   import Swoosh.TestAssertions
 
   test "send email on user signup" do
-    # Assuming `create_user` creates a new user then sends out a `Sample.UserEmail.welcome` email
+    # Assuming `create_user` creates a new user then sends out a
+    # `Sample.UserEmail.welcome` email
     user = create_user(%{username: "ironman", email: "tony.stark@example.com"})
     assert_email_sent Sample.UserEmail.welcome(user)
   end
 end
 ```
+
+## Custom JSON Library
+
+By default, Swoosh ships with required dependency `Jason`. In the future, we will change it to the builtin `JSON` module in Elixir 1.18+.
+If you want to swap the default JSON library used by Swoosh, you can configure it in your `config/config.exs` file like this:
+
+```elixir
+config :swoosh, :json_library, JSON
+```
+
+In future major versions, `Jason` will be removed from the dependency list or become an optional dependency.
 
 ## Mailbox preview in the browser
 
@@ -355,18 +330,20 @@ config :swoosh, serve_mailbox: true
 config :swoosh, serve_mailbox: true, preview_port: 4001
 ```
 
-When using `serve_mailbox: true` make sure to have `plug_cowboy` as a
-dependency of your app.
+When using `serve_mailbox: true` make sure to have either `plug_cowboy` or
+`bandit` as a dependency of your app.
 
 ```elixir
 {:plug_cowboy, ">= 1.0.0"}
+# or
+{:bandit, ">= 1.0.0"}
 ```
 
 And finally you can also use the following Mix task to start the mailbox
 preview server independently:
 
 ```console
-$ mix swoosh.mailbox.server
+mix swoosh.mailbox.server
 ```
 
 _Note_: the mailbox preview won't display emails
@@ -378,10 +355,13 @@ If you are curious, this is how it the mailbox preview looks like:
 
 ![Plug.Swoosh.MailboxPreview](https://github.com/swoosh/swoosh/raw/main/images/mailbox-preview.png)
 
+
+_Note_ : To show the preview we use the cdn-version of Tailwindcss. If you have set a `content-security-policy` you may have to add `https://cdn.tailwindcss.com` to `default-src` to have the correct make up.
+
 The preview is also available as a JSON endpoint.
 
 ```sh
-$ curl http://localhost:4000/dev/mailbox/json
+curl http://localhost:4000/dev/mailbox/json
 ```
 
 ### Production
@@ -404,7 +384,8 @@ The following events are emitted:
 - `[:swoosh, :deliver, :exception]`: occurs when `Mailer.deliver/2` throws an exception.
 - `[:swoosh, :deliver_many, :start]`: occurs when `Mailer.deliver_many/2` begins.
 - `[:swoosh, :deliver_many, :stop]`: occurs when `Mailer.deliver_many/2` completes.
-- `[:swoosh, :deliver_many, :exception]`: occurs when `Mailer.deliver_many/2` throws an exception.
+- `[:swoosh, :deliver_many, :exception]`: occurs when `Mailer.deliver_many/2`
+  throws an exception.
 
 View [example in docs](https://hexdocs.pm/swoosh/Swoosh.Mailer.html#module-telemetry)
 
@@ -420,22 +401,28 @@ We are grateful for any contributions. Before you submit an issue or a pull
 request, remember to:
 
 - Look at our [Contributing guidelines](CONTRIBUTING.md)
-- Not use the issue tracker for help or support requests (try StackOverflow, IRC or Slack instead)
-- Do a quick search in the issue tracker to make sure the issues hasn't been reported yet.
+- Not use the issue tracker for help or support requests (try StackOverflow,
+  IRC or Slack instead)
+- Do a quick search in the issue tracker to make sure the issues hasn't been
+  reported yet.
 - Look and follow the [Code of Conduct](CODE_OF_CONDUCT.md). Be nice and have fun!
 
 ### Running tests
 
 Clone the repo and fetch its dependencies:
 
-    $ git clone https://github.com/swoosh/swoosh.git
-    $ cd swoosh
-    $ mix deps.get
-    $ mix test
+```sh
+git clone https://github.com/swoosh/swoosh.git
+cd swoosh
+mix deps.get
+mix test
+```
 
 ### Building docs
 
-    $ MIX_ENV=docs mix docs
+```sh
+MIX_ENV=docs mix docs
+```
 
 ## LICENSE
 

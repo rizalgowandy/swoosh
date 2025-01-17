@@ -33,16 +33,7 @@ defmodule Swoosh.Mailer do
           api_key: "SG.x.x"
       end
 
-  System environment variables can be specified with `{:system, "ENV_VAR_NAME"}`:
-
-      config :sample, Sample.Mailer,
-        adapter: Swoosh.Adapters.SMTP,
-        relay: "smtp.sendgrid.net"
-        username: {:system, "SMTP_USERNAME"},
-        password: {:system, "SMTP_PASSWORD"},
-        tls: :always
-
-  ## Examples
+  ## Usage
 
   Once configured you can use your mailer like this:
 
@@ -50,7 +41,9 @@ defmodule Swoosh.Mailer do
       iex> email = new |> from("tony.stark@example.com") |> to("steve.rogers@example.com")
       %Swoosh.Email{from: {"", "tony.stark@example.com"}, ...}
       iex> Mailer.deliver(email)
-      :ok
+      {:ok, %{...}}
+
+  ## Dynamic config
 
   You can also pass an extra config argument to `deliver/2` that will be merged
   with your Mailer's config:
@@ -59,7 +52,7 @@ defmodule Swoosh.Mailer do
       iex> email = new |> from("tony.stark@example.com") |> to("steve.rogers@example.com")
       %Swoosh.Email{from: {"", "tony.stark@example.com"}, ...}
       iex> Mailer.deliver(email, domain: "jarvis.com")
-      :ok
+      {:ok, %{...}}
 
   ## Telemetry
 
@@ -79,7 +72,11 @@ defmodule Swoosh.Mailer do
       # tracks the number of emails sent successfully/errored
       defmodule MyHandler do
         def handle_event([:swoosh, :deliver, :stop], _measurements, metadata, _config) do
-          StatsD.increment("mail.sent.success", 1, %{mailer: metadata.mailer})
+          if Map.get(metadata, :error) do
+            StatsD.increment("mail.sent.failure", 1, %{mailer: metadata.mailer})
+          else
+            StatsD.increment("mail.sent.success", 1, %{mailer: metadata.mailer})
+          end
         end
 
         def handle_event([:swoosh, :deliver, :exception], _measurements, metadata, _config) do
@@ -87,7 +84,11 @@ defmodule Swoosh.Mailer do
         end
 
         def handle_event([:swoosh, :deliver_many, :stop], _measurements, metadata, _config) do
-          StatsD.increment("mail.sent.success", length(metadata.emails), %{mailer: metadata.mailer})
+          if Map.get(metadata, :error) do
+            StatsD.increment("mail.sent.failure", length(metadata.emails), %{mailer: metadata.mailer})
+          else
+            StatsD.increment("mail.sent.success", length(metadata.emails), %{mailer: metadata.mailer})
+          end
         end
 
         def handle_event([:swoosh, :deliver_many, :exception], _measurements, metadata, _config) do
@@ -114,6 +115,14 @@ defmodule Swoosh.Mailer do
       @otp_app Keyword.fetch!(opts, :otp_app)
       @mailer_config opts
 
+      Swoosh.Mailer.deprecated_system_env(@otp_app, __MODULE__)
+
+      @doc ~S"""
+      Delivers an email.
+
+      If the email is delivered it returns an `{:ok, result}` tuple. If it fails,
+      returns an `{:error, error}` tuple.
+      """
       @spec deliver(Swoosh.Email.t(), Keyword.t()) :: {:ok, term} | {:error, term}
       def deliver(email, config \\ [])
 
@@ -125,6 +134,12 @@ defmodule Swoosh.Mailer do
         end)
       end
 
+      @doc ~S"""
+      Delivers an email, raises on error.
+
+      If the email is delivered, it returns the result. If it fails, it raises
+      a `DeliveryError`.
+      """
       @spec deliver!(Swoosh.Email.t(), Keyword.t()) :: term | no_return
       def deliver!(email, config \\ [])
 
@@ -135,6 +150,11 @@ defmodule Swoosh.Mailer do
         end
       end
 
+      @doc ~S"""
+      Delivers a list of emails.
+
+      It accepts a list of `%Swoosh.Email{}` as its first parameter.
+      """
       @spec deliver_many(list(%Swoosh.Email{}), Keyword.t()) :: {:ok, term} | {:error, term}
       def deliver_many(emails, config \\ [])
 
@@ -180,6 +200,7 @@ defmodule Swoosh.Mailer do
     {:error, :from_not_set}
   end
 
+  @doc "Delivers an email."
   def deliver(%Swoosh.Email{} = email, config) do
     adapter = Keyword.fetch!(config, :adapter)
 
@@ -187,6 +208,10 @@ defmodule Swoosh.Mailer do
     adapter.deliver(email, config)
   end
 
+  @doc """
+  The implementation for `deliver_many/2` is on case-by-case basis. Check the adapter that you use
+  to see if it has `deliver_many/2` implemented.
+  """
   def deliver_many(emails, config) do
     adapter = Keyword.fetch!(config, :adapter)
 
@@ -194,28 +219,33 @@ defmodule Swoosh.Mailer do
     adapter.deliver_many(emails, config)
   end
 
-  @doc """
-  Parse configs in the following order, later ones taking priority:
-
-  1. mix configs
-  2. compiled configs in Mailer module
-  3. dynamic configs passed into the function
-  4. system envs
-  """
+  @doc false
   def parse_config(otp_app, mailer, mailer_config, dynamic_config) do
     Application.get_env(otp_app, mailer, [])
     |> Keyword.merge(mailer_config)
     |> Keyword.merge(dynamic_config)
-    |> Swoosh.Mailer.interpolate_env_vars()
+    |> interpolate_env_vars()
   end
 
-  @doc """
-  Interpolate system environment variables in the configuration.
+  @doc false
+  def deprecated_system_env(otp_app, mailer) do
+    config = Application.get_env(otp_app, mailer, [])
 
-  This function will transform all the {:system, "ENV_VAR"} tuples into their
-  respective values grabbed from the process environment.
-  """
-  def interpolate_env_vars(config) do
+    if Keyword.keyword?(config) do
+      Enum.each(config, fn
+        {key, {:system, _env_var}} ->
+          IO.warn(
+            "Using {:system, env_var} to configure Swoosh's #{inspect(mailer)} is deprecated, " <>
+              "please use config/runtime.exs instead (found under key #{inspect(key)})"
+          )
+
+        {_key, _value} ->
+          :ok
+      end)
+    end
+  end
+
+  defp interpolate_env_vars(config) do
     Enum.map(config, fn
       {key, {:system, env_var}} -> {key, System.get_env(env_var)}
       {key, value} -> {key, value}
@@ -227,7 +257,7 @@ defmodule Swoosh.Mailer do
     require Logger
 
     with adapter when not is_nil(adapter) <- adapter,
-         {:module, _} <- Code.ensure_loaded(adapter),
+         {:module, _} <- Code.ensure_compiled(adapter),
          true <- function_exported?(adapter, :validate_dependency, 0),
          :ok <- adapter.validate_dependency() do
       :ok

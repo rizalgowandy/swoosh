@@ -5,12 +5,25 @@ defmodule Swoosh.TestAssertions do
 
   It is meant to be used with the
   [Swoosh.Adapters.Test](Swoosh.Adapters.Test.html) module.
+
+  **Note**: `Swoosh.TestAssertions` works for unit tests and basic integration tests.
+  Unfortunately, it's not going to work for feature/E2E tests.
+  The mechanism of `assert_email_sent` is based on messaging sending between processes,
+  and is expecting the calling process (the one that calls `assert_email_sent`) to be
+  the calling process of `Mailer.deliver`, or be the parent process of the whatever
+  does the `Mailer.deliver` call.
+
+  For feature/E2E tests, you should use `Swoosh.Adapters.Local` adapter.
+  In your test, instead of calling `assert_email_sent`, you should navigate to the
+  preview url with your E2E tool (e.g. `wallaby`) and test that the email is in the inbox.
   """
 
   import ExUnit.Assertions
 
   alias Swoosh.Email
   alias Swoosh.Email.Recipient
+
+  @type email_assertion :: Email.t() | Keyword.t() | (Email.t() -> boolean())
 
   @doc """
   Sets Swoosh test adapter to global mode.
@@ -59,7 +72,8 @@ defmodule Swoosh.TestAssertions do
     assert_received {:email, _}
   end
 
-  @spec assert_email_sent(Email.t() | Keyword.t() | (Email.t() -> boolean())) :: :ok | tuple | no_return
+  @spec assert_email_sent(email_assertion()) ::
+          :ok | tuple | no_return
 
   @doc ~S"""
   Asserts `email` was sent.
@@ -76,13 +90,15 @@ defmodule Swoosh.TestAssertions do
       iex> Swoosh.Adapters.Test.deliver(email, [])
 
       # assert a specific email was sent
-      iex> assert_email_sent email
+      iex> assert_email_sent(email)
 
       # assert an email with specific field(s) was sent
-      iex> assert_email_sent subject: "Hello, Avengers!"
+      iex> assert_email_sent(subject: "Hello, Avengers!")
 
       # assert an email that satisfies a condition
-      iex> assert_email_sent fn email -> length(email.to) == 2 end
+      iex> assert_email_sent(fn email ->
+      ...>   assert length(email.to) == 2
+      ...> end)
   """
   def assert_email_sent(%Email{} = email) do
     assert_received {:email, ^email}
@@ -97,6 +113,54 @@ defmodule Swoosh.TestAssertions do
     assert_received {:email, email}
     assert fun.(email)
   end
+
+  @doc ~S"""
+  Asserts multiple emails were sent.
+
+  You can pass a list of maps to match on specific params per email
+
+  ## Examples
+
+      iex> alias Swoosh.Email
+      iex> import Swoosh.TestAssertions
+
+      iex> emails = Enum.map(1..2, fn n -> Email.new(subject: "Hello, Avengers #{n}!") end)
+      iex> Swoosh.Adapters.Test.deliver_many(emails, [])
+
+      # assert a specific email was sent
+      iex> assert_emails_sent(emails)
+
+      # assert the list of emails with specific field(s) that were sent
+      iex> assert_emails_sent([
+        %{subject: "Hello, Avengers 1!"},
+        %{subject: "Hello, Avengers 2!"},
+      ])
+  """
+  @spec assert_emails_sent() :: tuple | no_return
+  def assert_emails_sent do
+    assert_receive {:emails, _}
+  end
+
+  @spec assert_emails_sent([email_assertion()]) ::
+          :ok | tuple | no_return
+  def assert_emails_sent([%Swoosh.Email{} | _] = emails) do
+    assert_received {:emails, ^emails}
+  end
+
+  def assert_emails_sent([%{} | _] = params_map_list) do
+    assert_received {:emails, emails}
+
+    assert length(emails) == length(params_map_list)
+
+    emails
+    |> Enum.zip(params_map_list)
+    |> Enum.each(fn {email, params_map} ->
+      Enum.each(params_map, &assert_equal(email, &1))
+    end)
+  end
+
+  defp assert_equal(email, {:subject, %Regex{} = value}),
+    do: assert(email.subject =~ value)
 
   defp assert_equal(email, {:subject, value}),
     do: assert(email.subject == value)
@@ -137,6 +201,9 @@ defmodule Swoosh.TestAssertions do
   defp assert_equal(email, {:html_body, value}),
     do: assert(email.html_body == value)
 
+  defp assert_equal(email, {:headers, value}),
+    do: assert(email.headers == value)
+
   @doc ~S"""
   Asserts no emails were sent.
   """
@@ -160,10 +227,8 @@ defmodule Swoosh.TestAssertions do
   `%{attributes...} = email`.
   """
   defmacro refute_email_sent(attributes) when is_list(attributes) do
-    expr = attributes |> email_pattern() |> Macro.escape()
-
     quote do
-      refute_email_sent(unquote(expr))
+      refute_email_sent(%{unquote_splicing(Enum.map(attributes, &email_pattern/1))})
     end
   end
 
@@ -173,22 +238,16 @@ defmodule Swoosh.TestAssertions do
     end
   end
 
-  defp email_pattern(attributes) when is_list(attributes) do
-    Enum.reduce(attributes, %{}, &email_pattern(&2, &1))
+  defp email_pattern({key, value}) when key in [:from, :reply_to] do
+    {key, Recipient.format(value)}
   end
 
-  defp email_pattern(%{} = pattern, {key, value})
-       when key in [:from, :reply_to] do
-    Map.put(pattern, key, Recipient.format(value))
+  defp email_pattern({key, value}) when key in [:to, :cc, :bcc] do
+    {key, value |> List.wrap() |> Enum.map(&Recipient.format/1)}
   end
 
-  defp email_pattern(%{} = pattern, {key, value})
-       when key in [:to, :cc, :bcc] do
-    Map.put(pattern, key, value |> List.wrap() |> Enum.map(&Recipient.format/1))
-  end
-
-  defp email_pattern(%{} = pattern, {key, value}) do
-    Map.put(pattern, key, value)
+  defp email_pattern({key, value}) do
+    {key, value}
   end
 
   @doc ~S"""

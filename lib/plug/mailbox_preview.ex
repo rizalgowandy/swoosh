@@ -46,7 +46,7 @@ if Code.ensure_loaded?(Plug) do
 
       conn
       |> put_resp_header("location", conn.assigns.base_path)
-      |> send_resp(302, '')
+      |> send_resp(302, ~c"")
     end
 
     get "/json" do
@@ -84,14 +84,16 @@ if Code.ensure_loaded?(Plug) do
           attachments
           |> Enum.at(index)
           |> case do
-            %{data: data, content_type: content_type} when not is_nil(data) ->
+            %{data: data, content_type: content_type, filename: filename} when not is_nil(data) ->
               conn
               |> put_resp_content_type(content_type)
+              |> put_resp_header("content-disposition", "attachment; filename=\"#{filename}\"")
               |> send_resp(200, data)
 
-            %{path: path, content_type: content_type} when not is_nil(path) ->
+            %{path: path, content_type: content_type, filename: filename} when not is_nil(path) ->
               conn
               |> put_resp_content_type(content_type)
+              |> put_resp_header("content-disposition", "attachment; filename=\"#{filename}\"")
               |> send_resp(200, File.read!(path))
 
             _ ->
@@ -154,6 +156,10 @@ if Code.ensure_loaded?(Plug) do
         recipient -> Plug.HTML.html_escape(recipient)
       end
     end
+
+    defp render_value(value) when value == "", do: "n/a"
+
+    defp render_value(value), do: Plug.HTML.html_escape(value)
 
     defp replace_inline_references(%{html_body: nil, text_body: text_body}) do
       text_body

@@ -143,6 +143,77 @@ defmodule Swoosh.Adapters.AmazonSESTest do
     assert AmazonSES.deliver(email, config) == {:ok, %{id: "messageId", request_id: "requestId"}}
   end
 
+  test "deliver/1 encodes bcc", %{bypass: bypass, config: config} do
+    email =
+      new()
+      |> from({"G Threepwood", "guybrush.threepwood@pirates.grog"})
+      |> bcc("stan@coolshirt.com")
+      |> text_body("Hello")
+
+    Bypass.expect(bypass, fn conn ->
+      conn = parse(conn)
+
+      {:ok, raw_message} = conn.body_params["RawMessage.Data"] |> URI.decode() |> Base.decode64()
+
+      assert String.contains?(raw_message, "Bcc: stan@coolshirt.com\r\n")
+
+      Plug.Conn.resp(conn, 200, @success_response)
+    end)
+
+    assert AmazonSES.deliver(email, config) == {:ok, %{id: "messageId", request_id: "requestId"}}
+  end
+
+  test "optional config params are present in the API request body when they're set in the config",
+       %{
+         bypass: bypass,
+         config: config,
+         valid_email: email
+       } do
+    config =
+      config ++
+        [
+          ses_source: "aaa@bbb.com",
+          ses_source_arn: "arn:aws:ses:us-east-1:123:identity/source.example.com",
+          ses_from_arn: "arn:aws:ses:us-east-1:123:identity/from.example.com",
+          ses_return_path_arn: "arn:aws:ses:us-east-1:123:identity/return.example.com"
+        ]
+
+    Bypass.expect(bypass, fn conn ->
+      conn = parse(conn)
+
+      assert %{
+               "Source" => "aaa@bbb.com",
+               "SourceArn" => "arn:aws:ses:us-east-1:123:identity/source.example.com",
+               "FromArn" => "arn:aws:ses:us-east-1:123:identity/from.example.com",
+               "ReturnPathArn" => "arn:aws:ses:us-east-1:123:identity/return.example.com"
+             } = conn.body_params
+
+      Plug.Conn.resp(conn, 200, @success_response)
+    end)
+
+    assert AmazonSES.deliver(email, config) == {:ok, %{id: "messageId", request_id: "requestId"}}
+  end
+
+  test "optional config params are not present in the API request body when they're not set in the config",
+       %{
+         bypass: bypass,
+         config: config,
+         valid_email: email
+       } do
+    Bypass.expect(bypass, fn conn ->
+      conn = parse(conn)
+
+      assert :error = Map.fetch(conn.body_params, "Source")
+      assert :error = Map.fetch(conn.body_params, "SourceArn")
+      assert :error = Map.fetch(conn.body_params, "FromArn")
+      assert :error = Map.fetch(conn.body_params, "ReturnPathArn")
+
+      Plug.Conn.resp(conn, 200, @success_response)
+    end)
+
+    assert AmazonSES.deliver(email, config) == {:ok, %{id: "messageId", request_id: "requestId"}}
+  end
+
   test "a sent email that returns a api error parses correctly", %{
     bypass: bypass,
     config: config,

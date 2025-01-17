@@ -12,7 +12,7 @@ defmodule Swoosh.Adapters.SMTP.Helpers do
 
   @doc false
   def body(email, config) do
-    {message_config, config} = Keyword.split(config, [:transfer_encoding])
+    {message_config, config} = Keyword.split(config, [:transfer_encoding, :keep_bcc])
     {type, subtype, headers, parts} = prepare_message(email, message_config)
     {encoding_config, _config} = Keyword.split(config, [:dkim])
     mime_encode(type, subtype, headers, parts, encoding_config)
@@ -41,18 +41,26 @@ defmodule Swoosh.Adapters.SMTP.Helpers do
   @doc false
   def prepare_message(email, config) do
     email
-    |> prepare_headers()
+    |> prepare_headers(config)
     |> prepare_parts(email, config)
   end
 
-  defp prepare_headers(email) do
+  defp prepare_headers(email, config) do
     []
     |> prepare_additional_headers(email)
-    |> prepare_mime_version
+    |> prepare_mime_version()
     |> prepare_reply_to(email)
     |> prepare_subject(email)
-    |> prepare_bcc(email)
     |> prepare_cc(email)
+    |> then(fn headers ->
+      # bcc is deliberately omitted unless explicitly asked to keep, for service providers
+      # https://datatracker.ietf.org/doc/html/rfc5322#section-3.6.3
+      if config[:keep_bcc] do
+        prepare_bcc(headers, email)
+      else
+        headers
+      end
+    end)
     |> prepare_to(email)
     |> prepare_from(email)
   end
@@ -62,6 +70,7 @@ defmodule Swoosh.Adapters.SMTP.Helpers do
 
   defp prepare_from(headers, %{from: from}), do: [{"From", render_recipient(from)} | headers]
 
+  defp prepare_to(headers, %{to: []}), do: headers
   defp prepare_to(headers, %{to: to}), do: [{"To", render_recipient(to)} | headers]
 
   defp prepare_cc(headers, %{cc: []}), do: headers
@@ -75,7 +84,7 @@ defmodule Swoosh.Adapters.SMTP.Helpers do
   defp prepare_reply_to(headers, %{reply_to: reply_to}),
     do: [{"Reply-To", render_recipient(reply_to)} | headers]
 
-  defp prepare_mime_version(headers), do: [{"Mime-Version", "1.0"} | headers]
+  defp prepare_mime_version(headers), do: [{"MIME-Version", "1.0"} | headers]
 
   defp prepare_additional_headers(headers, %{headers: additional_headers}) do
     Map.to_list(additional_headers) ++ headers
@@ -118,16 +127,20 @@ defmodule Swoosh.Adapters.SMTP.Helpers do
          },
          config
        ) do
+    {inline_attachments, attachments} = Enum.split_with(attachments, &(&1.type == :inline))
+
     content_part =
       case {prepare_part(:plain, text_body, config), prepare_part(:html, html_body, config)} do
         {text_part, nil} ->
           text_part
 
         {nil, html_part} ->
-          html_part
+          html_with_line_attachments(html_part, inline_attachments)
 
         {text_part, html_part} ->
-          {"multipart", "alternative", [], @parameters, [text_part, html_part]}
+          html_part = html_with_line_attachments(html_part, inline_attachments)
+
+          {"multipart", "alternative", [], %{}, [text_part, html_part]}
       end
 
     attachment_parts = Enum.map(attachments, &prepare_attachment(&1))
@@ -161,6 +174,13 @@ defmodule Swoosh.Adapters.SMTP.Helpers do
      ], @content_params, content}
   end
 
+  defp html_with_line_attachments(html_part, []), do: html_part
+
+  defp html_with_line_attachments(html_part, inline_attachments) do
+    attachment_parts = Enum.map(inline_attachments, &prepare_attachment(&1))
+    {"multipart", "related", [], %{}, [html_part | attachment_parts]}
+  end
+
   defp add_content_type_header(headers, value) do
     if Enum.find(headers, fn {header_name, _} ->
          String.downcase(header_name) == "content-type"
@@ -172,7 +192,8 @@ defmodule Swoosh.Adapters.SMTP.Helpers do
   end
 
   defp prepare_attachment(
-         %{
+         %Swoosh.Attachment{
+           cid: cid,
            filename: filename,
            content_type: content_type,
            type: attachment_type,
@@ -201,10 +222,10 @@ defmodule Swoosh.Adapters.SMTP.Helpers do
           format,
           [
             {"Content-Transfer-Encoding", "base64"},
-            {"Content-Id", "<#{filename}>"}
+            {"Content-Id", "<#{cid || filename}>"}
             | custom_headers
           ],
-          attachment_content_params(:inline),
+          attachment_content_params(:inline, filename),
           content
         }
     end
@@ -227,19 +248,19 @@ defmodule Swoosh.Adapters.SMTP.Helpers do
   end
 
   if gen_smtp_major >= 1 do
-    defp attachment_content_params(:inline) do
+    defp attachment_content_params(:inline, filename) do
       %{
         content_type_params: [],
         disposition: "inline",
-        disposition_params: []
+        disposition_params: [{"filename", filename}]
       }
     end
   else
-    defp attachment_content_params(:inline) do
+    defp attachment_content_params(:inline, filename) do
       [
         {"content-type-params", []},
         {"disposition", "inline"},
-        {"disposition-params", []}
+        {"disposition-params", [{"filename", filename}]}
       ]
     end
   end

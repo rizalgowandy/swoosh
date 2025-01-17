@@ -21,15 +21,29 @@ defmodule Plug.Swoosh.MailboxPreviewTest do
         |> text_body("Lorem ipsum dolor sit amet")
         |> html_body("<p>Lorem ipsum dolor sit amet</p>")
         |> header("X-Magic-Number", "7")
-        |> put_provider_option(:template_model, %{name: "Steve", email: "steve@avengers.com"})
+        |> header("Message-ID", "1")
+        |> put_provider_option(:template_model, template_model())
         |> attachment(
-          Swoosh.Attachment.new("/data/file.png",
-            headers: [{"Content-Type", "text/calendar; method=\"REQUEST\""}]
+          Swoosh.Attachment.new({:data, "data"},
+            filename: "file.png",
+            content_type: "image/png"
           )
         )
         |> Swoosh.Email.put_private(:sent_at, "2021-01-21T18:34:20.615851Z"),
         %Swoosh.Email{}
       ]
+    end
+
+    def get(id) do
+      emails = all()
+
+      Enum.find(emails, fn %{headers: %{"Message-ID" => msg_id}} ->
+        msg_id == String.downcase(id)
+      end)
+    end
+
+    def template_model do
+      %{name: "Steve", email: "steve@avengers.com"}
     end
   end
 
@@ -57,19 +71,22 @@ defmodule Plug.Swoosh.MailboxPreviewTest do
                    "to" => ["random@villain.me"],
                    "html_body" => "<p>Lorem ipsum dolor sit amet</p>",
                    "text_body" => "Lorem ipsum dolor sit amet",
-                   "headers" => %{"X-Magic-Number" => "7"},
+                   "headers" => %{
+                     "X-Magic-Number" => "7",
+                     "Message-ID" => "1"
+                   },
                    "provider_options" => [
                      %{
                        "key" => "template_model",
-                       "value" => "%{email: \"steve@avengers.com\", name: \"Steve\"}"
+                       "value" => inspect(StorageDriver.template_model())
                      }
                    ],
                    "attachments" => [
                      %{
                        "content_type" => "image/png",
                        "filename" => "file.png",
-                       "headers" => %{"Content-Type" => "text/calendar; method=\"REQUEST\""},
-                       "path" => "/data/file.png",
+                       "headers" => %{},
+                       "path" => nil,
                        "type" => "attachment"
                      }
                    ]
@@ -90,6 +107,22 @@ defmodule Plug.Swoosh.MailboxPreviewTest do
                  }
                ]
              }
+    end
+  end
+
+  describe "/:id/attachments/:index" do
+    test "download attachment" do
+      opts = MailboxPreview.init(storage_driver: StorageDriver)
+
+      conn = conn(:get, "/1/attachments/0")
+      conn = MailboxPreview.call(conn, opts)
+
+      assert conn.state == :sent
+      assert conn.status == 200
+
+      assert get_resp_header(conn, "content-disposition") == [
+               "attachment; filename=\"file.png\""
+             ]
     end
   end
 end

@@ -84,31 +84,33 @@ defmodule Swoosh.MailerTest do
   end
 
   test "config from environment variables", %{valid_email: email} do
-    System.put_env("MAILER_TEST_SMTP_USERNAME", "userenv")
-    System.put_env("MAILER_TEST_SMTP_PASSWORD", "passwordenv")
+    ExUnit.CaptureIO.capture_io(:stderr, fn ->
+      System.put_env("MAILER_TEST_SMTP_USERNAME", "userenv")
+      System.put_env("MAILER_TEST_SMTP_PASSWORD", "passwordenv")
 
-    Application.put_env(:swoosh, Swoosh.MailerTest.EnvMailer,
-      username: {:system, "MAILER_TEST_SMTP_USERNAME"},
-      password: {:system, "MAILER_TEST_SMTP_PASSWORD"},
-      relay: "smtp.sendgrid.net",
-      tls: :always
-    )
+      Application.put_env(:swoosh, Swoosh.MailerTest.EnvMailer,
+        username: {:system, "MAILER_TEST_SMTP_USERNAME"},
+        password: {:system, "MAILER_TEST_SMTP_PASSWORD"},
+        relay: "smtp.sendgrid.net",
+        tls: :always
+      )
 
-    defmodule EnvMailer do
-      use Swoosh.Mailer, otp_app: :swoosh, adapter: FakeAdapter
-    end
+      defmodule EnvMailer do
+        use Swoosh.Mailer, otp_app: :swoosh, adapter: FakeAdapter
+      end
 
-    {:ok, {_email, configs}} = EnvMailer.deliver(email)
+      {:ok, {_email, configs}} = EnvMailer.deliver(email)
 
-    assert MapSet.subset?(
-             MapSet.new(
-               username: "userenv",
-               password: "passwordenv",
-               relay: "smtp.sendgrid.net",
-               tls: :always
-             ),
-             MapSet.new(configs)
-           )
+      assert MapSet.subset?(
+               MapSet.new(
+                 username: "userenv",
+                 password: "passwordenv",
+                 relay: "smtp.sendgrid.net",
+                 tls: :always
+               ),
+               MapSet.new(configs)
+             )
+    end)
   end
 
   test "merge config passed to deliver/2 into Mailer's config", %{valid_email: email} do
@@ -159,11 +161,13 @@ defmodule Swoosh.MailerTest do
   end
 
   describe "telemetry" do
-    setup do
-      handler = fn event, %{}, metadata, _ ->
+    defmodule TeleHandler do
+      def handle(event, %{}, metadata, _) do
         send(self(), {:telemetry, event, metadata})
       end
+    end
 
+    setup do
       on_exit(fn ->
         :telemetry.detach("telemetry-handler")
       end)
@@ -178,7 +182,7 @@ defmodule Swoosh.MailerTest do
           [:swoosh, :deliver_many, :stop],
           [:swoosh, :deliver_many, :exception]
         ],
-        handler,
+        &TeleHandler.handle/4,
         nil
       )
     end

@@ -25,6 +25,37 @@ defmodule Swoosh.Adapters.SendgridTest do
     |> Plug.Conn.resp(200, body)
   end
 
+  test "successful delivery returns :ok for gzip emails", %{
+    bypass: bypass,
+    config: config,
+    valid_email: email
+  } do
+    Bypass.expect(bypass, fn conn ->
+      conn = parse(conn)
+
+      body_params = %{
+        "from" => %{"email" => "tony.stark@example.com"},
+        "personalizations" => [%{"to" => [%{"email" => "steve.rogers@example.com"}]}],
+        "content" => [
+          %{"type" => "text/plain", "value" => "Hello"},
+          %{"type" => "text/html", "value" => "<h1>Hello</h1>"}
+        ],
+        "subject" => "Hello, Avengers!"
+      }
+
+      assert body_params == conn.body_params
+      assert "/mail/send" == conn.request_path
+      assert "POST" == conn.method
+      assert {"content-encoding", "gzip"} in conn.req_headers
+      assert body_params == conn.body_params
+
+      respond_with(conn, body: "{\"message\":\"success\"}", id: "123-xyz")
+    end)
+
+    config = Keyword.put(config, :compress, true)
+    assert Sendgrid.deliver(email, config) == {:ok, %{id: "123-xyz"}}
+  end
+
   test "successful delivery returns :ok", %{bypass: bypass, config: config, valid_email: email} do
     Bypass.expect(bypass, fn conn ->
       conn = parse(conn)
@@ -160,14 +191,8 @@ defmodule Swoosh.Adapters.SendgridTest do
       new()
       |> from({"T Stark", "tony.stark@example.com"})
       |> to({"Steve Rogers", "steve.rogers@example.com"})
-      |> reply_to("hulk.smash@example.com")
-      |> cc("hulk.smash@example.com")
-      |> cc({"Janet Pym", "wasp.avengers@example.com"})
-      |> bcc("thor.odinson@example.com")
-      |> bcc({"Henry McCoy", "beast.avengers@example.com"})
       |> subject("Hello, Avengers!")
       |> html_body("<h1>Hello</h1>")
-      |> text_body("Hello")
       |> put_provider_option(:custom_args, %{
         my_var: %{my_message_id: 123},
         my_other_var: %{my_other_id: 1, stuff: 2}
@@ -178,18 +203,9 @@ defmodule Swoosh.Adapters.SendgridTest do
 
       body_params = %{
         "from" => %{"name" => "T Stark", "email" => "tony.stark@example.com"},
-        "reply_to" => %{"email" => "hulk.smash@example.com"},
         "personalizations" => [
           %{
             "to" => [%{"name" => "Steve Rogers", "email" => "steve.rogers@example.com"}],
-            "cc" => [
-              %{"name" => "Janet Pym", "email" => "wasp.avengers@example.com"},
-              %{"email" => "hulk.smash@example.com"}
-            ],
-            "bcc" => [
-              %{"name" => "Henry McCoy", "email" => "beast.avengers@example.com"},
-              %{"email" => "thor.odinson@example.com"}
-            ],
             "custom_args" => %{
               "my_var" => %{"my_message_id" => 123},
               "my_other_var" => %{"stuff" => 2, "my_other_id" => 1}
@@ -197,8 +213,46 @@ defmodule Swoosh.Adapters.SendgridTest do
           }
         ],
         "content" => [
-          %{"type" => "text/plain", "value" => "Hello"},
           %{"type" => "text/html", "value" => "<h1>Hello</h1>"}
+        ],
+        "subject" => "Hello, Avengers!"
+      }
+
+      assert body_params == conn.body_params
+      assert "/mail/send" == conn.request_path
+      assert "POST" == conn.method
+
+      respond_with(conn, body: "{\"message\":\"success\"}", id: "123-xyz")
+    end)
+
+    assert Sendgrid.deliver(email, config) == {:ok, %{id: "123-xyz"}}
+  end
+
+  test "deliver/1 with multiple reply_to returns :ok", %{bypass: bypass, config: config} do
+    email =
+      new()
+      |> from({"T Stark", "tony.stark@example.com"})
+      |> to({"Steve Rogers", "steve.rogers@example.com"})
+      |> reply_to(["hulk.smash@example.com", "avengers.office@example.com"])
+      |> subject("Hello, Avengers!")
+      |> text_body("Hello")
+
+    Bypass.expect(bypass, fn conn ->
+      conn = parse(conn)
+
+      body_params = %{
+        "from" => %{"name" => "T Stark", "email" => "tony.stark@example.com"},
+        "reply_to_list" => [
+          %{"email" => "hulk.smash@example.com"},
+          %{"email" => "avengers.office@example.com"}
+        ],
+        "personalizations" => [
+          %{
+            "to" => [%{"name" => "Steve Rogers", "email" => "steve.rogers@example.com"}]
+          }
+        ],
+        "content" => [
+          %{"type" => "text/plain", "value" => "Hello"}
         ],
         "subject" => "Hello, Avengers!"
       }
@@ -624,6 +678,49 @@ defmodule Swoosh.Adapters.SendgridTest do
             "enable" => false
           }
         }
+      }
+
+      assert body_params == conn.body_params
+      assert "/mail/send" == conn.request_path
+      assert "POST" == conn.method
+
+      respond_with(conn, body: "{\"message\":\"success\"}", id: "123-xyz")
+    end)
+
+    assert Sendgrid.deliver(email, config) == {:ok, %{id: "123-xyz"}}
+  end
+
+  test "deliver/1 with scheduling parameters returns :ok", %{bypass: bypass, config: config} do
+    email =
+      new()
+      |> from({"T Stark", "tony.stark@example.com"})
+      |> to({"Steve Rogers", "steve.rogers@example.com"})
+      |> subject("Hello, Avengers!")
+      |> html_body("<h1>Hello</h1>")
+      |> text_body("Hello")
+      |> put_provider_option(
+        :batch_id,
+        "AsdFgHjklQweRTYuIopzXcVBNm0aSDfGHjklmZcVbNMqWert1znmOP2asDFjkl"
+      )
+      |> put_provider_option(:send_at, 1_617_260_400)
+
+    Bypass.expect(bypass, fn conn ->
+      conn = parse(conn)
+
+      body_params = %{
+        "from" => %{"name" => "T Stark", "email" => "tony.stark@example.com"},
+        "personalizations" => [
+          %{
+            "to" => [%{"name" => "Steve Rogers", "email" => "steve.rogers@example.com"}]
+          }
+        ],
+        "content" => [
+          %{"type" => "text/plain", "value" => "Hello"},
+          %{"type" => "text/html", "value" => "<h1>Hello</h1>"}
+        ],
+        "subject" => "Hello, Avengers!",
+        "batch_id" => "AsdFgHjklQweRTYuIopzXcVBNm0aSDfGHjklmZcVbNMqWert1znmOP2asDFjkl",
+        "send_at" => 1_617_260_400
       }
 
       assert body_params == conn.body_params
